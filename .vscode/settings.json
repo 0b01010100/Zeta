@@ -1,0 +1,27 @@
+{
+    "files.associations": {
+
+    },
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "j:\\CodeProjects\\lex\\bin",
+            "binaryPath": "j:\\CodeProjects\\lex\\bin\\zeta",
+            "binaryArgs": []
+        },
+        {
+            "cwd": "j:\\CodeProjects\\lex\\bin",
+            "binaryPath": "j:\\CodeProjects\\lex\\bin\\zeta_release",
+            "binaryArgs": []
+        },
+        {
+            "cwd": "j:\\CodeProjects\\lex\\bin",
+            "binaryPath": "j:\\CodeProjects\\lex\\bin\\zeta_debug",
+            "binaryArgs": []
+        },
+        {
+            "cwd": "j:\\CodeProjects\\zetaLang\\bin",
+            "binaryPath": "j:\\CodeProjects\\zetaLang\\bin\\zeta_release",
+            "binaryArgs": []
+        }
+    ]
+}
