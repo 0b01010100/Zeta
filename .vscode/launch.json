@@ -5,21 +5,21 @@
             "name": "Debug with Make",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/bin/zeta_debug.exe", // Path to your compiled executable
+            "program": "${workspaceFolder}/bin/zeta_debug",  // Adjust path to your executable
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
-            "MIMode": "gdb",
-            "miDebuggerPath": "gdb",
+            "MIMode": "gdb",  // Or "lldb" depending on your setup
+            "miDebuggerPath": "gdb",  // Ensure this points to a valid debugger (use lldb for macOS)
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ],
+            ]
         }
     ]
 }

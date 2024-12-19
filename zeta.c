@@ -5,9 +5,13 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+// Maximum amount of Zeta code to interpret
 #define CODE_MAX 1024 
+// reference (just for code clarity)
 #define ref &
+// pointer (just for code clarity)
 #define ptr *
+// Represents Any Number
 typedef double Num;
 
 // Error handling
@@ -40,7 +44,7 @@ typedef enum {
     EOF_TOKEN
 } TokenType;
 
-// TokenType ToString
+// Maping TokenType to Strings
 const char ptr TokenType_ToString(TokenType tokenType) {
     switch (tokenType) {
         case INTEGER: return "INTEGER";
@@ -167,6 +171,7 @@ Token get_next_token(Lexer ptr lexer) {
 typedef struct Ast Ast;
 Ast ptr Ast_BinOp_Init(Ast ptr left, Token op, Ast ptr right);
 Ast ptr Ast_Num_Init(Token num);
+Ast ptr Ast_Unary_Init(Token num, Ast ptr expr);
 
 // parser structure
 typedef struct {
@@ -180,6 +185,7 @@ Ast ptr factor(Parser ptr parser);
 Ast ptr term(Parser ptr parser);
 Ast ptr expr(Parser ptr parser);
 
+// Initalize the Parser class
 Parser Parser_Init(Lexer ptr lexer)
 {   
     return (Parser){
@@ -200,8 +206,14 @@ void eat(Parser ptr parser, TokenType token_type) {
 // Parse factor: INTEGER or (expr)
 Ast ptr factor(Parser ptr parser) {
     Token token = parser->current_token;
-    
-    if (token.type == INTEGER) {
+    if (token.type == MINUS) {
+        eat(parser, MINUS);
+        return Ast_Unary_Init(token, factor(parser));
+    }else if(token.type == PLUS) {
+        eat(parser, PLUS);
+        return Ast_Unary_Init(token, factor(parser));
+    }
+    else if (token.type == INTEGER) {
         eat(parser, INTEGER);
         return Ast_Num_Init(token);
     } else if (token.type == LPAREN) {
@@ -212,7 +224,7 @@ Ast ptr factor(Parser ptr parser) {
     }
 
     error("Unexpected token %s", TokenType_ToString(token.type));
-    return NULL; // <- Will never reach
+    return NULL; // <- May never reach (just to get rid of that warning though)
 }
 
 // Parse term: factor ((MUL | DIV) factor)*
@@ -256,6 +268,7 @@ Ast ptr expr(Parser ptr parser) {
     return node;
 }
 
+// Parse expression
 Ast ptr parse(Parser ptr parser){
     return expr(parser);
 }
@@ -268,18 +281,23 @@ Ast ptr parse(Parser ptr parser){
 ###############################################################################
 */
 
+// Ast Types
 typedef enum  {
-    AST_BINOP = 0,
+    AST_UNARY = 0,
+    AST_BINOP,
     AST_NUM
 }AstType;
 
+// Generic Ast class
 struct Ast
 {
     AstType type;
     union
-    {
-        // For Operators
-        struct {Ast* left; Token op; Ast* right;};
+    {   
+        // For Unary Operartor
+        struct {Ast ptr expr; /*Token op;*/};
+        // For Binary Operators
+        struct {Ast ptr left; Token op; Ast ptr right;};
         // For Numbers
         struct {Num value; Token num;};
     };
@@ -297,6 +315,13 @@ Ast ptr Ast_Num_Init(Token num){
     return ast;
 }
 
+Ast ptr Ast_Unary_Init(Token num, Ast ptr expr){
+    Ast ptr ast = malloc(sizeof(Ast));
+    *ast = (Ast){.type = AST_UNARY, .expr = expr};
+    ast->op = num;
+    return ast;
+}
+
 typedef struct 
 {
     Parser* parser;
@@ -304,13 +329,16 @@ typedef struct
 
 // Function prototypes for the visitor
 
-double visit(Interpreter* interpreter, Ast* node);
-double visit_BinOp(Interpreter* interpreter, Ast* node);
-double visit_Num(Interpreter* interpreter, Ast* node);
+Num visit(Interpreter* interpreter, Ast* node);
+Num visit_BinOp(Interpreter* interpreter, Ast* node);
+Num visit_Num(Interpreter* interpreter, Ast* node);
+Num visit_UnaryOp(Interpreter* interpreter, Ast* node);
 
 // Generic visit function
-double visit(Interpreter* interpreter, Ast* node) {
+Num visit(Interpreter* interpreter, Ast* node) {
     switch (node->type) {
+        case AST_UNARY:
+            return visit_UnaryOp(interpreter, node);
         case AST_BINOP:
             return visit_BinOp(interpreter, node);
         case AST_NUM:
@@ -321,10 +349,21 @@ double visit(Interpreter* interpreter, Ast* node) {
     }
 }
 
+// Visit unary operation node
+Num visit_UnaryOp(Interpreter* self, Ast* node) {
+    TokenType op = node->op.type;
+    if (op == PLUS){
+        return +visit(self, node->expr);
+    }else if(op == MINUS){
+        return -visit(self, node->expr);
+    }
+    return 0; // <- May never reach (just to get rid of that warning though)
+}
+
 // Visit binary operation node
-double visit_BinOp(Interpreter* interpreter, Ast* node) {
-    double left = visit(interpreter, node->left);
-    double right = visit(interpreter, node->right);
+Num visit_BinOp(Interpreter* interpreter, Ast* node) {
+    Num left = visit(interpreter, node->left);
+    Num right = visit(interpreter, node->right);
     switch (node->op.type) {
         case PLUS:
             return left + right;
@@ -345,7 +384,7 @@ double visit_BinOp(Interpreter* interpreter, Ast* node) {
 }
 
 // Visit number node
-double visit_Num(Interpreter* interpreter, Ast* node) {
+Num visit_Num(Interpreter* interpreter, Ast* node) {
     return node->value;
 }
 
@@ -357,7 +396,7 @@ Interpreter Interpreter_Init(void* parser) {
 }
 
 // Main interpret function
-double interpret(Interpreter* interpreter, Ast* tree) {
+Num interpret(Interpreter* interpreter, Ast* tree) {
     return visit(interpreter, tree);
 }
 
