@@ -68,6 +68,7 @@ typedef struct {
 // Lexer structure
 typedef struct {
     char ptr text;
+    size_t text_len;
     size_t pos;
     char current_char;
 } Lexer;
@@ -81,6 +82,7 @@ Token get_next_token(Lexer ptr lexer);
 Lexer Lexer_Init(char ptr text){
     return (Lexer){
         .current_char = text[0],
+        .text_len = strlen(text),
         .pos = 0,
         .text = text
     };
@@ -89,9 +91,15 @@ Lexer Lexer_Init(char ptr text){
 // Advance the position in the lexer
 void advance(Lexer ptr lexer) {
     lexer->pos++;
-    lexer->current_char = (lexer->pos < strlen(lexer->text)) 
+    lexer->current_char = (lexer->pos < lexer->text_len) 
         ? lexer->text[lexer->pos] 
         : '\0';
+}
+
+// Checking for the next char without advancing
+char peek(Lexer ptr lexer) {
+    size_t next_pos = lexer->pos + 1;
+    return (next_pos < lexer->text_len) ? lexer->text[next_pos] : '\0';
 }
 
 // Skip whitespace characters
@@ -102,16 +110,43 @@ void skip_whitespace(Lexer ptr lexer) {
 }
 
 // Parse number from input
-Num number(Lexer ptr lexer) {
+Num number(Lexer* lexer) {
     char result[32] = {0};
     int i = 0;
-    
-    while (lexer->current_char != '\0' && isdigit(lexer->current_char)) {
-        if (i>=32) error("Number is is too long");
+    bool hasDot = false;
+    bool hasE = false;
+
+    do
+    {
+        // check if we reach the 32 range
+        if (i >= 32) error("Too many digits in the number");
+
+        // properly handle '.'
+        if (lexer->current_char == '.') {
+            if (hasDot) {
+                error("Too many '.' in this number");
+            }
+            hasDot = true;
+        } 
+        // properly handle Scientific Notation 'E' or 'e'
+        else if (lexer->current_char == 'E' || lexer->current_char == 'e') {
+            if (hasE) {
+                error("Too many 'E' or 'e' in this number");
+            }
+            hasE = true;
+            if (isdigit(peek(lexer))){
+                error("Must have a digit after the 'E' or 'e'");
+            }
+        }
+
         result[i++] = lexer->current_char;
         advance(lexer);
-    }
-    
+    }while (lexer->current_char != '\0' && 
+           (isdigit(lexer->current_char) 
+            || lexer->current_char == '.' 
+            || lexer->current_char == 'E' || lexer->current_char == 'e'
+           ));
+
     return atof(result);
 }
 
@@ -125,7 +160,7 @@ Token get_next_token(Lexer ptr lexer) {
         }
         
         // Parse integers
-        if (isdigit(lexer->current_char)) {
+        if (isdigit(lexer->current_char) || lexer->current_char == '.') {
             Token token = {INTEGER, {0}};
             sprintf(token.value, "%lf", number(lexer));
             return token;
@@ -303,18 +338,21 @@ struct Ast
     };
 };
 
+// For creating Ast for Binary Operators
 Ast ptr Ast_BinOp_Init(Ast ptr left, Token op, Ast ptr right){
     Ast ptr ast = malloc(sizeof(Ast));
     *ast = (Ast){.type = AST_BINOP,.left = left, .op = op, .right = right};
     return ast;
 }
 
+// For creating Ast for Numbers
 Ast ptr Ast_Num_Init(Token num){
     Ast ptr ast = malloc(sizeof(Ast));
     *ast = (Ast){.type = AST_NUM, .num = num, .value = atof(num.value)};
     return ast;
 }
 
+// For creating Ast for Unary Operators
 Ast ptr Ast_Unary_Init(Token num, Ast ptr expr){
     Ast ptr ast = malloc(sizeof(Ast));
     *ast = (Ast){.type = AST_UNARY, .expr = expr};
@@ -324,18 +362,18 @@ Ast ptr Ast_Unary_Init(Token num, Ast ptr expr){
 
 typedef struct 
 {
-    Parser* parser;
+    Parser ptr parser;
 }Interpreter;
 
 // Function prototypes for the visitor
 
-Num visit(Interpreter* interpreter, Ast* node);
-Num visit_BinOp(Interpreter* interpreter, Ast* node);
-Num visit_Num(Interpreter* interpreter, Ast* node);
-Num visit_UnaryOp(Interpreter* interpreter, Ast* node);
+Num visit(Interpreter ptr interpreter, Ast ptr node);
+Num visit_BinOp(Interpreter ptr interpreter, Ast ptr node);
+Num visit_Num(Interpreter ptr interpreter, Ast ptr node);
+Num visit_UnaryOp(Interpreter ptr interpreter, Ast ptr node);
 
 // Generic visit function
-Num visit(Interpreter* interpreter, Ast* node) {
+Num visit(Interpreter ptr interpreter, Ast ptr node) {
     switch (node->type) {
         case AST_UNARY:
             return visit_UnaryOp(interpreter, node);
@@ -350,7 +388,7 @@ Num visit(Interpreter* interpreter, Ast* node) {
 }
 
 // Visit unary operation node
-Num visit_UnaryOp(Interpreter* self, Ast* node) {
+Num visit_UnaryOp(Interpreter ptr self, Ast ptr node) {
     TokenType op = node->op.type;
     if (op == PLUS){
         return +visit(self, node->expr);
@@ -361,7 +399,7 @@ Num visit_UnaryOp(Interpreter* self, Ast* node) {
 }
 
 // Visit binary operation node
-Num visit_BinOp(Interpreter* interpreter, Ast* node) {
+Num visit_BinOp(Interpreter ptr interpreter, Ast ptr node) {
     Num left = visit(interpreter, node->left);
     Num right = visit(interpreter, node->right);
     switch (node->op.type) {
@@ -384,19 +422,19 @@ Num visit_BinOp(Interpreter* interpreter, Ast* node) {
 }
 
 // Visit number node
-Num visit_Num(Interpreter* interpreter, Ast* node) {
+Num visit_Num(Interpreter ptr interpreter, Ast ptr node) {
     return node->value;
 }
 
 // Interpreter initialization
-Interpreter Interpreter_Init(void* parser) {
+Interpreter Interpreter_Init(Parser ptr parser) {
     return (Interpreter){
         .parser = parser
     };
 }
 
 // Main interpret function
-Num interpret(Interpreter* interpreter, Ast* tree) {
+Num interpret(Interpreter ptr interpreter, Ast ptr tree) {
     return visit(interpreter, tree);
 }
 
@@ -412,14 +450,14 @@ int main() {
             break;
         }
         
-        // Remove newline
+        // Remove newline and calculate length once
         size_t len = strlen(input);
-        if (len > 0 && input[len-1] == '\n') {
-            input[len-1] = '\0';
+        if (len > 0 && input[len - 1] == '\n') {
+            input[--len] = '\0'; // Adjust length after removing newline
         }
-        
+
         // Skip empty input
-        if (strlen(input) == 0) {
+        if (len == 0) {
             continue;
         }
         
