@@ -19,7 +19,7 @@ obj_release = $(patsubst %.c,$(build_dir_release)/%.o,$(src))
 
 # Output executables
 output_debug = $(bin_dir)/zeta_debug
-output_release = $(bin_dir)/zeta_release
+output_release = $(bin_dir)/zeta
 
 # Default target
 all: debug release
