@@ -7,10 +7,13 @@
 
 // Maximum amount of Zeta code to interpret
 #define CODE_MAX 1024 
+
 // reference (just for code clarity)
 #define ref &
+
 // pointer (just for code clarity)
 #define ptr *
+
 // Represents Any Number
 typedef double Num;
 
@@ -20,7 +23,7 @@ void error(const char ptr detail, ...) {
     va_start(args, detail);
     vfprintf(stderr, detail, args);
     va_end(args);
-
+    printf("\n");
     exit(EXIT_FAILURE);
 }
 
@@ -79,6 +82,7 @@ void skip_whitespace(Lexer ptr lexer);
 Num number(Lexer ptr lexer);
 Token get_next_token(Lexer ptr lexer);
 
+// Create Lexer Type
 Lexer Lexer_Init(char ptr text){
     return (Lexer){
         .current_char = text[0],
@@ -97,8 +101,8 @@ void advance(Lexer ptr lexer) {
 }
 
 // Checking for the next char without advancing
-char peek(Lexer ptr lexer) {
-    size_t next_pos = lexer->pos + 1;
+char peek(Lexer ptr lexer, size_t offset) {
+    size_t next_pos = lexer->pos + offset;
     return (next_pos < lexer->text_len) ? lexer->text[next_pos] : '\0';
 }
 
@@ -110,44 +114,57 @@ void skip_whitespace(Lexer ptr lexer) {
 }
 
 // Parse number from input
-Num number(Lexer* lexer) {
-    char result[32] = {0};
+Num number(Lexer ptr lexer) {
+    char result[32];
     int i = 0;
     bool hasDot = false;
     bool hasE = false;
 
-    do
-    {
-        // check if we reach the 32 range
-        if (i >= 32) error("Too many digits in the number");
-
-        // properly handle '.'
+    do {
+        // Check if we exceed the result buffer
+        if (i >= 31) error("Too many digits in the number");
+        
         if (lexer->current_char == '.') {
+            // Handle decimal point
             if (hasDot) {
                 error("Too many '.' in this number");
             }
             hasDot = true;
         } 
-        // properly handle Scientific Notation 'E' or 'e'
         else if (lexer->current_char == 'E' || lexer->current_char == 'e') {
+            
+            // Handle scientific notation
             if (hasE) {
                 error("Too many 'E' or 'e' in this number");
             }
             hasE = true;
-            if (isdigit(peek(lexer))){
-                error("Must have a digit after the 'E' or 'e'");
+            
+            result[i++] = lexer->current_char;
+            advance(lexer); // Move past 'E' or 'e'
+
+            // Check for optional '+' or '-'
+            if (lexer->current_char == '+' || lexer->current_char == '-') {
+                result[i++] = lexer->current_char; // Append sign to the result
+                advance(lexer); // Move past the sign
+            }
+
+            // Ensure there is at least one digit in the exponent
+            if (!isdigit(lexer->current_char)) {
+                error("'E' or 'e' must be followed by a number");
             }
         }
 
+        // Append current character to the result
         result[i++] = lexer->current_char;
         advance(lexer);
-    }while (lexer->current_char != '\0' && 
-           (isdigit(lexer->current_char) 
-            || lexer->current_char == '.' 
-            || lexer->current_char == 'E' || lexer->current_char == 'e'
-           ));
+    } while (lexer->current_char != '\0' &&
+             (isdigit(lexer->current_char) ||
+              lexer->current_char == '.' ||
+              lexer->current_char == 'E' || lexer->current_char == 'e'));
 
-    return atof(result);
+    result[i] = '\0'; // Null-terminate the string
+    Num n = atof(result);
+    return n;
 }
 
 // Get next token from input
@@ -162,7 +179,7 @@ Token get_next_token(Lexer ptr lexer) {
         // Parse integers
         if (isdigit(lexer->current_char) || lexer->current_char == '.') {
             Token token = {INTEGER, {0}};
-            sprintf(token.value, "%lf", number(lexer));
+            sprintf(token.value, "%g", number(lexer));
             return token;
         }
         
@@ -360,6 +377,7 @@ Ast ptr Ast_Unary_Init(Token num, Ast ptr expr){
     return ast;
 }
 
+// The Interpretert
 typedef struct 
 {
     Parser ptr parser;
@@ -382,8 +400,7 @@ Num visit(Interpreter ptr interpreter, Ast ptr node) {
         case AST_NUM:
             return visit_Num(interpreter, node);
         default:
-            fprintf(stderr, "No visit function for this node type\n");
-            exit(1);
+            error("No visit function for this node type");
     }
 }
 
@@ -411,13 +428,11 @@ Num visit_BinOp(Interpreter ptr interpreter, Ast ptr node) {
             return left * right;
         case DIV:
             if (right == 0) {
-                fprintf(stderr, "Division by zero\n");
-                exit(1);
+                error("Division by zero");
             }
             return left / right;
         default:
-            fprintf(stderr, "Unknown operator\n");
-            exit(1);
+            error("Unknown operator");
     }
 }
 
@@ -438,7 +453,9 @@ Num interpret(Interpreter ptr interpreter, Ast ptr tree) {
     return visit(interpreter, tree);
 }
 
-int main() {
+// Entry Point
+int main() 
+{
     char input[CODE_MAX];
     
     while (true) 
