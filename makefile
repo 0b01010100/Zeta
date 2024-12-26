@@ -19,7 +19,7 @@ obj_release = $(patsubst %.c,$(build_dir_release)/%.o,$(src))
 
 # Output executables
 output_debug = $(bin_dir)/zeta_debug
-output_release = $(bin_dir)/zeta_release
+output_release = $(bin_dir)/zeta
 
 # Default target
 all: debug release
@@ -59,6 +59,9 @@ run-debug: debug
 # Run the release build
 run-release: release
 	./$(output_release)
+
+run-test:
+	./$(output_release) .zeta
 
 # Clean target to remove compiled files and directories
 clean:
