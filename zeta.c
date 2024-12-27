@@ -13,8 +13,12 @@
 ###############################################################################
 */
 
+// Ignore 'maybe-uninitialized'
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
 // Maximum amount of Zeta code to interpret
-#define CODE_MAX 1024 * 4 
+#define CODE_MAX (1024 * 4) 
 
 // reference (just for code clarity)
 #define ref &
@@ -43,7 +47,7 @@ typedef struct {
 } darray;
 
 // Function prototypes
-darray ptr darray_create(size_t elementSize);
+darray ptr _darray_create(size_t elementSize);
 void darray_destroy(darray ptr array);
 void darray_add(darray ptr array, void ptr element);
 void ptr darray_get(darray ptr array, size_t index);
@@ -95,6 +99,27 @@ void darray_resize(darray ptr array, size_t newCapacity) {
     array->capacity = newCapacity;
 }
 
+// Gets the fule/absolute path
+char ptr get_full_path(const char* relative_path) {
+    #ifdef _WIN32
+        static char full_path[PATH_MAX];
+        //_fullpath
+        if (_fullpath(full_path, relative_path, sizeof(full_path)) == NULL) {
+            perror("Error getting full path");
+            return NULL;
+        }
+    #else
+        static char full_path[MAX_PATH];
+        //realpath
+        if (realpath(relative_path, full_path) == NULL) {
+            perror("Error getting full path");
+            return NULL;
+        }
+    #endif
+
+    return full_path;
+}
+
 /*
 ###############################################################################
 #                                                                             #
@@ -133,6 +158,7 @@ const char ptr TokenType_ToString(TokenType tokenType) {
         case MINUS: return "MINUS";
         case SEMI: return "SEMI";
         case EOL_TOKEN: return "EOL_TOKEN";
+        case EOF_TOKEN: return "EOF_TOKEN";
         default: return "UNKNOWN";
     }
 }
@@ -148,7 +174,7 @@ typedef struct {
     FILE ptr file;
     char ptr line;
     size_t line_len;
-    size_t pos; // col
+    size_t col;
     size_t row;
     char current_char;
 } Lexer;
@@ -161,10 +187,9 @@ Token get_next_token(Lexer ptr lexer);
 
 // Create Lexer Type
 Lexer Lexer_Init(FILE ptr file){
-    char *line = (char *)malloc(CODE_MAX);
+    char ptr line = (char ptr)malloc(CODE_MAX);
     if (!line) {
-        fprintf(stderr, "Failed to allocate memory for buffer\n");
-        exit(EXIT_FAILURE);
+        error("Failed to allocate memory for buffer");
     }
     fgets(line, CODE_MAX, file);
     return (Lexer){
@@ -172,23 +197,23 @@ Lexer Lexer_Init(FILE ptr file){
         .line = line,
         .current_char = line[0],
         .line_len = strlen(line),
-        .pos = 0,
+        .col = 0,
         .row = 0,
     };
 }
 
-// Advance the position in the lexer
+// Advance the colition in the lexer
 void advance(Lexer ptr lexer) {
-    lexer->pos++;
-    lexer->current_char = (lexer->pos < lexer->line_len) 
-        ? lexer->line[lexer->pos] 
+    lexer->col++;
+    lexer->current_char = (lexer->col < lexer->line_len) 
+        ? lexer->line[lexer->col] 
         : '\0';
 }
 
 // Checking for the next char without advancing
 char peek(Lexer ptr lexer, size_t offset) {
-    size_t next_pos = lexer->pos + offset;
-    return (next_pos < lexer->line_len) ? lexer->line[next_pos] : '\0';
+    size_t next_col = lexer->col + offset;
+    return (next_col < lexer->line_len) ? lexer->line[next_col] : '\0';
 }
 
 // Skip whitespace characters
@@ -208,7 +233,7 @@ Token identifier(Lexer ptr lexer){
         token.value[i++] = lexer->current_char;
         advance(lexer);
     }
-    while (lexer->current_char != NULL && isalnum(lexer->current_char));
+    while (lexer->current_char != '\0' && isalnum(lexer->current_char));
     return token;
 }
 
@@ -313,7 +338,7 @@ Token get_next_token(Lexer ptr lexer) {
                 advance(lexer);
                 return (Token){ASSIGN, "="};
             default:
-                error("Invalid character %c at [%zu:%zu]", lexer->current_char, lexer->row, lexer->pos);
+                error("Invalid character %c at [%zu:%zu]", lexer->current_char, lexer->row, lexer->col);
         }
     }
         
@@ -323,7 +348,7 @@ Token get_next_token(Lexer ptr lexer) {
     }
 
     lexer->row++;
-    lexer->pos=0;
+    lexer->col=0;
     lexer->current_char = lexer->line[0];
     // End of input
     return (Token){EOL_TOKEN, "EOL"};
@@ -337,41 +362,6 @@ Token get_next_token(Lexer ptr lexer) {
 ###############################################################################
 */
 
-// parser structure
-typedef struct {
-    Lexer ptr lexer;
-    Token current_token;
-} Parser;
-
-// Consume expected token
-void eat(Parser ptr parser, unsigned int count, TokenType types[]) {
-    int matched = 0;
-
-    // Check if the current token matches any of the expected types
-    for (unsigned int i = 0; i < count; i++) {
-        if (parser->current_token.type == types[i]) {
-            matched = 1;
-            break;
-        }
-    }
-
-    if (matched) {
-        parser->current_token = get_next_token(parser->lexer); // Consume token
-    } else {
-        error("Invalid syntax"); // Handle unexpected token
-    }
-}
-
-typedef struct Ast Ast;
-Ast ptr Ast_Var_Init(Token num);
-Ast ptr Ast_Assign_Init(Ast ptr left, Token op, Ast ptr right);
-Ast ptr Ast_BinOp_Init(Ast ptr left, Token op, Ast ptr right);
-Ast ptr Ast_Num_Init(Token num);
-Ast ptr Ast_Unary_Init(Token num, Ast ptr expr);
-Ast ptr Ast_Compound_Init(darray ptr list);
-Ast ptr Ast_NoOp_Init();
-
-
 // Ast Types
 typedef enum  {
     AST_VAR,
@@ -384,7 +374,8 @@ typedef enum  {
 }AstType;
 
 // Generic Ast class
-struct Ast
+typedef struct Ast Ast;
+typedef struct Ast
 {
     AstType type;
     union
@@ -398,7 +389,17 @@ struct Ast
         // For Numbers and Var
         struct {Num value; Token token;};
     };
-};
+}Ast;
+
+Ast ptr Ast_Var_Init(Token num);
+Ast ptr Ast_Assign_Init(Ast ptr left, Token op, Ast ptr right);
+Ast ptr Ast_BinOp_Init(Ast ptr left, Token op, Ast ptr right);
+Ast ptr Ast_Num_Init(Token num);
+Ast ptr Ast_Unary_Init(Token num, Ast ptr expr);
+Ast ptr Ast_Compound_Init(darray ptr list);
+Ast ptr Ast_NoOp_Init();
+
+
 
 
 // For creating Ast for Unary Operators
@@ -452,17 +453,25 @@ Ast ptr Ast_Compound_Init(darray ptr list){
     return root;
 }
 
+// Parser structure
+typedef struct {
+    Lexer ptr lexer;
+    Token current_token;
+} Parser;
 
 Parser Parser_Init(Lexer ptr lexer);
 void eat(Parser ptr parser, unsigned int count, TokenType types[]);
 Ast ptr factor(Parser ptr parser);
 Ast ptr term(Parser ptr parser);
 Ast ptr expr(Parser ptr parser);
-
-Ast ptr program(Parser ptr parser);
+Ast ptr empty(Parser ptr parser);
+Ast ptr variable(Parser ptr parser);
+Ast ptr assignment_statement(Parser ptr parser);
+Ast ptr statment(Parser ptr parser);
 Ast ptr compound_statment(Parser ptr parser);
 darray ptr statement_list(Parser ptr parser);
-Ast ptr statment(Parser ptr parser);
+Ast ptr program(Parser ptr parser);
+Ast ptr parse(Parser ptr parser);
 
 // Initalize the Parser class
 Parser Parser_Init(Lexer ptr lexer)
@@ -473,7 +482,25 @@ Parser Parser_Init(Lexer ptr lexer)
     };
 }
 
-Ast ptr variable(Parser ptr parser);
+// Consume expected token
+void eat(Parser ptr parser, unsigned int count, TokenType types[]) {
+    int matched = 0;
+
+    // Check if the current token matches any of the expected types
+    for (unsigned int i = 0; i < count; i++) {
+        if (parser->current_token.type == types[i]) {
+            matched = 1;
+            break;
+        }
+    }
+
+    if (matched) {
+        parser->current_token = get_next_token(parser->lexer); // Consume token
+    } else {
+        error("Invalid syntax"); // Handle unexpected token
+    }
+}
+
 // Parse factor: NUMBER or (expr)
 Ast ptr factor(Parser ptr parser) {
     Token token = parser->current_token;
@@ -541,7 +568,7 @@ Ast ptr expr(Parser ptr parser) {
     return node;
 }
 
-// Parse empty
+// Parse empty: empty ((SEMI | NUMBER | EOL_TOKEN))
 Ast ptr empty(Parser ptr parser){
     if(parser->current_token.type != SEMI){
         eat(parser, 2, (TokenType[]){NUMBER, EOL_TOKEN});
@@ -549,14 +576,14 @@ Ast ptr empty(Parser ptr parser){
     return Ast_NoOp_Init();
 }
 
-// Parse varaible
+// Parse varaible: ((ID))
 Ast ptr variable(Parser ptr parser){
     Ast ptr node = Ast_Var_Init(parser->current_token);
     eat(parser, 1, (TokenType[]){ID});
     return node;
 }
 
-// Parse assignment statement
+// Parse assignment statement: varaible ((ASSIGN) expr)
 Ast ptr assignment_statement(Parser ptr parser){
     Ast ptr left = variable(parser);
     Token token = parser->current_token;
@@ -566,9 +593,7 @@ Ast ptr assignment_statement(Parser ptr parser){
     return node;
 }
 
-Ast ptr compound_statment(Parser ptr parser);
-
-// Parse statement
+// Parse statement: (ID | empty)
 Ast ptr statment(Parser ptr parser){
     Ast ptr node;
     if (parser->current_token.type == ID){
@@ -580,10 +605,10 @@ Ast ptr statment(Parser ptr parser){
     return node;
 }
 
-// Parse statement list
+// Parse statement list: statment ((SEMI) statment)*
 darray ptr statement_list(Parser ptr parser){
     Ast ptr node = statment(parser);
-    size_t col = parser->lexer->row;
+    size_t cur_row = parser->lexer->row;
     darray ptr results = darray_create(Ast ptr);
     darray_add(results, ref node);
 
@@ -595,13 +620,13 @@ darray ptr statement_list(Parser ptr parser){
     }
 
     //Ast ptr n = *(Ast ptr*)darray_get(results, 0); -> debug
-    if (parser->current_token.type == ID && col == parser->lexer->row){
+    if (parser->current_token.type == ID && cur_row == parser->lexer->row){
         error("Worng place for an ID");
     }
     return results;
 }
 
-//Parse statement
+// Parse statement
 Ast ptr compound_statment(Parser ptr parser){
     Ast ptr root = Ast_Compound_Init(statement_list(parser));
     if(parser->current_token.type != ID){
@@ -610,11 +635,11 @@ Ast ptr compound_statment(Parser ptr parser){
     return root;
 }
 
+// Parse program
 Ast ptr program(Parser ptr parser){
     Ast ptr node = compound_statment(parser);
     return node;
 }
-
 
 // Parse expression
 Ast ptr parse(Parser ptr parser){
@@ -664,8 +689,7 @@ Num set_variable(Interpreter ptr interpreter, const char ptr name, Num value) {
         interpreter->vtable.capacity = interpreter->vtable.capacity ? interpreter->vtable.capacity * 2 : 4;
         interpreter->vtable.vars = realloc(interpreter->vtable.vars, interpreter->vtable.capacity * sizeof(Variable));
         if (!interpreter->vtable.vars) {
-            fprintf(stderr, "Memory allocation failed\n");
-            exit(1);
+            error("Memory allocation failed");
         }
     }
 
@@ -680,8 +704,7 @@ Num get_variable(Interpreter ptr interpreter, const char ptr name) {
             return interpreter->vtable.vars[i].value;
         }
     }
-    fprintf(stderr, "Undefined variable: %s\n", name);
-    exit(1);
+    error("Undefined variable: %s", name);
     return 0;
 }
 
@@ -764,14 +787,17 @@ Num visit_Var(Interpreter ptr interpreter, Ast ptr node) {
 
 // Vist compount node
 void visit_Compound(Interpreter ptr interpreter, Ast ptr node){
+    bool nl = false;
     for (size_t i = 0; i < node->childrend->elCount; i++)
     {
         Ast ptr statement =  *(Ast ptr ptr)darray_get(node->childrend,  i);
         Num result = visit(interpreter, statement);
         if(statement->type != AST_NoOp){
             printf("%g ", result);
+            nl = true;
         }
     }
+    if (nl) printf("\n");
     darray_destroy(node->childrend);
     free(node);
 }
@@ -804,6 +830,7 @@ Num visit(Interpreter ptr interpreter, Ast ptr node) {
         default:
             error("No visit function for this node type");
     }
+    return -1; // <- will never reach
 }
 
 // Interpreter initialization
@@ -822,27 +849,6 @@ void interpret(Interpreter ptr interpreter) {
     }
 }
 
-// Gets the fule/absolute path
-char ptr get_full_path(const char* relative_path) {
-    #ifdef _WIN32
-        static char full_path[PATH_MAX];
-        //_fullpath
-        if (_fullpath(full_path, relative_path, sizeof(full_path)) == NULL) {
-            perror("Error getting full path");
-            return NULL;
-        }
-    #else
-        static char full_path[MAX_PATH];
-        //realpath
-        if (realpath(relative_path, full_path) == NULL) {
-            perror("Error getting full path");
-            return NULL;
-        }
-    #endif
-
-    return full_path;
-}
-
 // Check args for the file to interpret
 FILE ptr parse_args(int argc, char ptr argv[]) {
     if (argc < 2) {
@@ -852,7 +858,7 @@ FILE ptr parse_args(int argc, char ptr argv[]) {
 
     FILE ptr f = fopen(get_full_path(argv[1]), "r");
     if (!f) {
-        error("Cannot find '%s': No such file or directory .\n", argv[1]);
+        error("Cannot find '%s': No such file or directory.\n", argv[1]);
         return NULL;
     }
 
@@ -868,7 +874,7 @@ int main(int argc, char ptr argv[])
     Parser parser = Parser_Init(ref lexer);
     Interpreter interpreter = Interpreter_Init(ref parser);
 
-    // Evaluate and print result
+    // Evaluate
     interpret(ref interpreter); 
 
     // Release resources
