@@ -1,6 +1,3 @@
-Here’s a `README.md` for your interpreter project, written in a clear and informative style for GitHub or any developer audience:
-
----
 
 # 🐍 Zeta — A Python-Like Language Interpreter in C
 
